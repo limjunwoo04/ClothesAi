@@ -6,7 +6,7 @@ import { Sparkles, ArrowRight, ArrowLeft, ShoppingBag, Loader2, RefreshCw, X, In
 // 모든 API 호출을 Worker로 통일 (Claude + 네이버)
 // ─────────────────────────────────────────────────────────────
 
-const WORKER_URL = 'https://clothesai.limjunwoo04.workers.dev';
+const WORKER_URL = '';
 
 const FONT_LINK = `
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,800;1,9..144,400&display=swap');
@@ -152,7 +152,7 @@ const callAI = async (profile, styleQuery) => {
 }`;
 
   // ─── 1단계 — Worker /ai 엔드포인트로 Claude 호출 ───
-  const aiResponse = await fetch(`${WORKER_URL}/ai`, {
+  const aiResponse = await fetch(`${WORKER_URL}/api/ai`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -189,7 +189,7 @@ const callAI = async (profile, styleQuery) => {
     });
   });
 
-  const searchResponse = await fetch(`${WORKER_URL}/batch-search`, {
+  const searchResponse = await fetch(`${WORKER_URL}/api/batch-search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ queries }),
