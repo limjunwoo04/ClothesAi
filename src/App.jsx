@@ -152,13 +152,13 @@ const callAI = async (profile, styleQuery) => {
   ]
 }`;
 
-  // ─── 1단계 — Worker /ai 엔드포인트로 Claude 호출 ───
-  const aiResponse = await fetch(`${WORKER_URL}/api/ai`, {
+  // ─── 1단계 — Vercel /api/ai 엔드포인트로 Groq Llama 호출 (같은 도메인 상대경로) ───
+  const aiResponse = await fetch(`/api/ai`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 6000,
+      max_tokens: 3500,
       messages: [{ role: 'user', content: prompt }],
     }),
   });
@@ -200,7 +200,7 @@ const callAI = async (profile, styleQuery) => {
     });
   });
 
-  const searchResponse = await fetch(`${WORKER_URL}/api/batch-search`, {
+  const searchResponse = await fetch(`/api/batch-search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ queries }),
