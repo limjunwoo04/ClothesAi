@@ -109,8 +109,9 @@ const callAI = async (profile, styleQuery) => {
 
 ## 작업 순서
 1. 입력을 무드/색/핏으로 해석. mood_label은 코디 컨셉을 한 줄로 표현 (예: "꾸안꾸 선데이 카페 크루", "미니멀 캠퍼스 데이").
-2. 서로 다른 방향의 코디 3개 구상 (각: 모자/상의/하의/신발 — 가방·양말 X).
-3. 각 아이템(총 12개)마다 네이버 쇼핑에서 검색할 한국어 검색어(search_keyword)를 만든다.
+2. **반드시 outfits 배열에 정확히 3개의 서로 다른 코디**를 만든다 (각: 모자/상의/하의/신발 — 가방·양말 X). 1개 또는 2개만 만들면 안 된다. 3개 미만이면 출력 자체가 무효다.
+3. 각 코디는 명확히 다른 방향성(예: 1번-미니멀, 2번-스트릿, 3번-스마트캐주얼)을 가져야 한다.
+4. 각 아이템(총 12개)마다 네이버 쇼핑에서 검색할 한국어 검색어(search_keyword)를 만든다.
 
 ## 검색어 작성 규칙 (매우 중요)
 - 반드시 성별 토큰을 포함: "${profile.gender === '남성' ? '남성' : '여성'}"
@@ -157,7 +158,7 @@ const callAI = async (profile, styleQuery) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 4000,
+      max_tokens: 6000,
       messages: [{ role: 'user', content: prompt }],
     }),
   });
@@ -174,6 +175,16 @@ const callAI = async (profile, styleQuery) => {
   const end = cleaned.lastIndexOf('}');
   if (start === -1 || end === -1) throw new Error('Claude 응답에서 JSON을 찾을 수 없습니다.');
   const result = JSON.parse(cleaned.slice(start, end + 1));
+
+  // 가드 — outfits이 3개 미만이면 부족분을 첫 번째 코디 복제로 채워 화살표 동작 보장
+  if (!Array.isArray(result.outfits) || result.outfits.length === 0) {
+    throw new Error('AI가 코디를 생성하지 못했습니다. 다시 시도해 주세요.');
+  }
+  while (result.outfits.length < 3) {
+    const base = JSON.parse(JSON.stringify(result.outfits[0]));
+    base.title = `${base.title || '코디'} · 변형 ${result.outfits.length + 1}`;
+    result.outfits.push(base);
+  }
 
   // ─── 2단계 — Worker /batch-search로 12개 검색어 동시 질의 ───
   const queries = [];
@@ -212,7 +223,8 @@ const callAI = async (profile, styleQuery) => {
       const item = outfit.items[slot];
       if (!item) return;
       const candidates = slotMap[`${oi}-${slot}`] || [];
-      const picked = candidates[0];
+      // 이미지 URL 있는 후보 우선, 없으면 첫 번째로 폴백
+      const picked = candidates.find((c) => c.image_url && /^https?:\/\//.test(c.image_url)) || candidates[0];
       if (picked) {
         item.name = picked.name;
         item.image_url = picked.image_url;
@@ -537,6 +549,41 @@ function ProductImage({ item, slot, alt, className, style }) {
   );
 }
 
+function HoverPreview({ item, slot }) {
+  if (!item) return null;
+  return (
+    <div
+      className="hidden md:flex absolute top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 pointer-events-none flex-col gap-1 px-3 py-2.5 bg-white"
+      style={{
+        left: 'calc(100% + 16px)',
+        minWidth: 200,
+        maxWidth: 260,
+        borderLeft: '2px solid var(--ink)',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+        transition: 'opacity 0.2s ease',
+        zIndex: 50,
+      }}
+    >
+      <div className="font-body text-[9px] tracking-[0.25em] uppercase" style={{ color: 'var(--accent)' }}>
+        {ITEM_LABELS[slot]?.ko} · {ITEM_LABELS[slot]?.en}
+      </div>
+      <div className="font-body text-xs leading-snug" style={{ color: 'var(--ink)', fontWeight: 500 }}>
+        {item.name}
+      </div>
+      <div className="flex items-center justify-between mt-1 pt-1.5" style={{ borderTop: '1px solid var(--line)' }}>
+        <span className="font-body text-sm" style={{ color: 'var(--ink)', fontWeight: 700 }}>
+          {item.price || '가격 확인'}
+        </span>
+        {item.is_direct_product && (
+          <span className="font-body text-[9px] tracking-[0.15em] uppercase flex items-center gap-1" style={{ color: 'var(--muted)' }}>
+            <ExternalLink size={9} /> {item.mall || '네이버'}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function LookbookCard({ outfit, index, total }) {
   const items = SLOT_ORDER.map((slot) => ({ slot, item: outfit.items[slot] })).filter(({ item }) => item);
 
@@ -575,6 +622,7 @@ function LookbookCard({ outfit, index, total }) {
               style={{ width: 140, height: 110, marginBottom: -8, zIndex: 4 }}>
               <ProductImage item={outfit.items.hat} slot="hat" alt={outfit.items.hat.name}
                 className="w-full h-full" style={{ background: 'transparent' }} />
+              <HoverPreview item={outfit.items.hat} slot="hat" />
             </a>
           )}
           {outfit.items.top && (
@@ -583,6 +631,7 @@ function LookbookCard({ outfit, index, total }) {
               style={{ width: 240, height: 240, marginBottom: -16, zIndex: 3 }}>
               <ProductImage item={outfit.items.top} slot="top" alt={outfit.items.top.name}
                 className="w-full h-full" style={{ background: 'transparent' }} />
+              <HoverPreview item={outfit.items.top} slot="top" />
             </a>
           )}
           {outfit.items.bottom && (
@@ -591,6 +640,7 @@ function LookbookCard({ outfit, index, total }) {
               style={{ width: 220, height: 260, marginBottom: -12, zIndex: 2 }}>
               <ProductImage item={outfit.items.bottom} slot="bottom" alt={outfit.items.bottom.name}
                 className="w-full h-full" style={{ background: 'transparent' }} />
+              <HoverPreview item={outfit.items.bottom} slot="bottom" />
             </a>
           )}
           {outfit.items.shoes && (
@@ -599,6 +649,7 @@ function LookbookCard({ outfit, index, total }) {
               style={{ width: 160, height: 110, zIndex: 1 }}>
               <ProductImage item={outfit.items.shoes} slot="shoes" alt={outfit.items.shoes.name}
                 className="w-full h-full" style={{ background: 'transparent' }} />
+              <HoverPreview item={outfit.items.shoes} slot="shoes" />
             </a>
           )}
         </div>

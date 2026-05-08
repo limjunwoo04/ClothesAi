@@ -92,9 +92,16 @@ async function searchNaver(query, display, sort, slot = 'default') {
   const linkPriority = { smartstore: 1, external: 2, brand: 3, shopping: 4, unknown: 5 };
 
   final.sort((a, b) => {
+    // 0순위: 이미지 URL 있는 항목 우선 (없으면 화면에서 깨짐)
+    const aHasImg = !!(a.image_url && a.image_url.startsWith('http'));
+    const bHasImg = !!(b.image_url && b.image_url.startsWith('http'));
+    if (aHasImg !== bHasImg) return aHasImg ? -1 : 1;
+    // 1순위: 패션몰 우선
     if (a._is_fashion_mall !== b._is_fashion_mall) return a._is_fashion_mall ? -1 : 1;
+    // 2순위: 직링 종류
     const lp = (linkPriority[a._link_type] || 99) - (linkPriority[b._link_type] || 99);
     if (lp !== 0) return lp;
+    // 3순위: 가격 낮은 순
     return (a.price_num || 0) - (b.price_num || 0);
   });
 
