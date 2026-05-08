@@ -5,13 +5,40 @@ const PRICE_FLOOR = {
   hat: 8000, top: 12000, bottom: 15000, shoes: 25000, default: 10000,
 };
 
-const FASHION_MALLS = [
-  '무신사', 'MUSINSA', '29CM', '29cm',
+// 누끼 사진 비중에 따라 몰을 티어로 분류 — 낮은 티어가 우선 노출됨
+// 티어 1 — 누끼/단독 컷 비중 매우 높음 (전문 셀렉트샵)
+const TIER1_MALLS = [
+  '무신사', 'MUSINSA',
+  '29CM', '29cm',
   'W컨셉', 'WCONCEPT', 'wconcept',
-  '스타일쉐어', 'ABLY', '에이블리',
-  'ZIGZAG', '지그재그', 'BRANDI', '브랜디',
-  'OCO', 'EQL', 'LOOKPIN', '룩핀', '하이버',
+  'EQL',
+  'OCO',
+  '하이버',
 ];
+
+// 티어 2 — 누끼 비중 중간 (커뮤니티/큐레이션)
+const TIER2_MALLS = [
+  '스타일쉐어',
+  'LOOKPIN', '룩핀',
+];
+
+// 티어 3 — 모델샷/생활샷 비중 큼 (여성 패션앱)
+const TIER3_MALLS = [
+  'ABLY', '에이블리',
+  'ZIGZAG', '지그재그',
+  'BRANDI', '브랜디',
+];
+
+function getMallTier(mallName) {
+  if (!mallName) return 99;
+  const upper = mallName.toUpperCase();
+  if (TIER1_MALLS.some((m) => upper.includes(m.toUpperCase()))) return 1;
+  if (TIER2_MALLS.some((m) => upper.includes(m.toUpperCase()))) return 2;
+  if (TIER3_MALLS.some((m) => upper.includes(m.toUpperCase()))) return 3;
+  return 4; // 그 외 (스마트스토어 등)
+}
+
+const MODEL_SHOT_KEYWORDS = /모델|착용샷|코디|룩북|화보|model|outfit/i;
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -68,10 +95,12 @@ async function searchNaver(query, display, sort, slot = 'default') {
     const cleanUrl = cleanProductUrl(item.link);
     const linkType = classifyUrl(cleanUrl);
     const mall = item.mallName || '';
-    const isFashionMall = FASHION_MALLS.some((m) => mall.toUpperCase().includes(m.toUpperCase()));
+    const cleanName = stripHtml(item.title);
+    const mallTier = getMallTier(mall);
+    const hasModelKeyword = MODEL_SHOT_KEYWORDS.test(cleanName);
 
     return {
-      name: stripHtml(item.title),
+      name: cleanName,
       image_url: item.image,
       product_url: cleanUrl,
       price: item.lprice ? `${Number(item.lprice).toLocaleString()}원` : null,
@@ -81,7 +110,8 @@ async function searchNaver(query, display, sort, slot = 'default') {
       category: [item.category1, item.category2, item.category3, item.category4].filter(Boolean).join(' > '),
       is_direct_product: true,
       _link_type: linkType,
-      _is_fashion_mall: isFashionMall,
+      _mall_tier: mallTier,
+      _has_model_keyword: hasModelKeyword,
     };
   });
 
@@ -96,16 +126,18 @@ async function searchNaver(query, display, sort, slot = 'default') {
     const aHasImg = !!(a.image_url && a.image_url.startsWith('http'));
     const bHasImg = !!(b.image_url && b.image_url.startsWith('http'));
     if (aHasImg !== bHasImg) return aHasImg ? -1 : 1;
-    // 1순위: 패션몰 우선
-    if (a._is_fashion_mall !== b._is_fashion_mall) return a._is_fashion_mall ? -1 : 1;
-    // 2순위: 직링 종류
+    // 1순위: 몰 티어 (낮을수록 누끼 비중 높음)
+    if (a._mall_tier !== b._mall_tier) return a._mall_tier - b._mall_tier;
+    // 2순위: 모델/착용샷 키워드 없는 거 우선
+    if (a._has_model_keyword !== b._has_model_keyword) return a._has_model_keyword ? 1 : -1;
+    // 3순위: 직링 종류
     const lp = (linkPriority[a._link_type] || 99) - (linkPriority[b._link_type] || 99);
     if (lp !== 0) return lp;
-    // 3순위: 가격 낮은 순
+    // 4순위: 가격 낮은 순
     return (a.price_num || 0) - (b.price_num || 0);
   });
 
-  return final.map(({ _link_type, _is_fashion_mall, ...rest }) => rest);
+  return final.map(({ _link_type, _mall_tier, _has_model_keyword, ...rest }) => rest);
 }
 
 function cleanProductUrl(url) {
