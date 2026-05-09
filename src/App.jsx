@@ -240,10 +240,11 @@ const callAI = async (profile, styleQuery) => {
         item.is_direct_product = true;
         totalPrice += picked.price_num || 0;
       } else {
+        // 백엔드 폴백도 통과 못한 극히 드문 케이스 — 네이버 검색 페이지로 안내
         item.name = item.search_keyword;
         item.image_url = '';
         item.product_url = `https://search.shopping.naver.com/search/all?query=${encodeURIComponent(item.search_keyword)}`;
-        item.price = '검색 결과 없음';
+        item.price = '비슷한 상품 보기';
         item.price_num = 0;
         item.is_direct_product = false;
       }
@@ -515,12 +516,24 @@ function ProductImage({ item, slot, alt, className, style }) {
 
   if (!src) {
     return (
-      <div className={className} style={{ ...style, background: item.color_hex || '#e8dfd0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-        <div className="font-display italic text-2xl" style={{ color: 'rgba(0,0,0,0.55)' }}>
+      <div
+        className={className}
+        style={{
+          ...style,
+          background: 'rgba(255,255,255,0.5)',
+          border: '1px dashed var(--line)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          position: 'relative',
+        }}
+      >
+        <div className="font-display italic" style={{ color: 'var(--muted)', fontSize: '1.1em', fontWeight: 400 }}>
           {ITEM_LABELS[slot]?.ko || ''}
         </div>
-        <div className="font-body text-[9px] tracking-[0.3em] uppercase mt-1" style={{ color: 'rgba(0,0,0,0.4)' }}>
-          이미지 미리보기 불가
+        <div className="font-body text-[8px] tracking-[0.25em] uppercase mt-1" style={{ color: 'var(--muted)' }}>
+          {ITEM_LABELS[slot]?.en || ''}
         </div>
       </div>
     );

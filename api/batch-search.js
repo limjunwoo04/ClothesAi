@@ -105,7 +105,7 @@ export default async function handler(req, res) {
   return res.status(200).json({ ok: true, results });
 }
 
-async function searchNaver(query, display, sort, slot = 'default', gender = null) {
+async function callNaverApi(query, display, sort) {
   const clientId = process.env.NAVER_CLIENT_ID;
   const clientSecret = process.env.NAVER_CLIENT_SECRET;
 
@@ -114,7 +114,6 @@ async function searchNaver(query, display, sort, slot = 'default', gender = null
   }
 
   const apiUrl = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}&display=${display}&sort=${sort}`;
-
   const response = await fetch(apiUrl, {
     headers: {
       'X-Naver-Client-Id': clientId,
@@ -126,7 +125,32 @@ async function searchNaver(query, display, sort, slot = 'default', gender = null
     throw new Error(`네이버 API 오류 ${response.status}`);
   }
 
-  const data = await response.json();
+  return response.json();
+}
+
+async function searchNaver(query, display, sort, slot = 'default', gender = null) {
+  // 단계별 검색 폴백 — 0건이면 검색어 단순화해서 재시도
+  let data = await callNaverApi(query, display, sort);
+  let usedQuery = query;
+
+  if (!data.items || data.items.length === 0) {
+    const tokens = query.split(/\s+/).filter(Boolean);
+    if (tokens.length > 2) {
+      // 마지막 형용사/색상 토큰 제거
+      const shorterQuery = tokens.slice(0, -1).join(' ');
+      data = await callNaverApi(shorterQuery, display, sort);
+      usedQuery = shorterQuery;
+    }
+  }
+
+  if ((!data.items || data.items.length === 0) && SLOT_CATEGORIES[slot]) {
+    // 슬롯 일반 카테고리어로 폴백 (예: hat → "남성 모자")
+    const genderToken = gender || '';
+    const slotToken = SLOT_CATEGORIES[slot][0];
+    const fallbackQuery = `${genderToken} ${slotToken}`.trim();
+    data = await callNaverApi(fallbackQuery, display, sort);
+    usedQuery = fallbackQuery;
+  }
 
   let items = (data.items || []).map((item) => {
     const cleanUrl = cleanProductUrl(item.link);
