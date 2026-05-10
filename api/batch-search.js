@@ -95,7 +95,9 @@ export default async function handler(req, res) {
       try {
         const slotType = (q.slot || '').split('-').pop() || 'default';
         const items = await searchNaver(q.keyword, 20, q.sort || 'sim', slotType, gender);
-        return { slot: q.slot, keyword: q.keyword, items: items.slice(0, q.display || 5) };
+        // Vision 분류로 단독컷 우선 재정렬 (실패 시 원본 정렬 그대로)
+        const ranked = await rankByVisionClassification(items, slotType);
+        return { slot: q.slot, keyword: q.keyword, items: ranked.slice(0, q.display || 5) };
       } catch (e) {
         return { slot: q.slot, keyword: q.keyword, items: [], error: e.message };
       }
@@ -103,6 +105,82 @@ export default async function handler(req, res) {
   );
 
   return res.status(200).json({ ok: true, results });
+}
+
+// ─────────────────────────────────────────────────────────────
+// Vision 분류 — Groq Llama 3.2 Vision으로 사진 직접 보고 "단독컷 vs 모델샷" 판별
+// ─────────────────────────────────────────────────────────────
+
+const SLOT_LABEL_KO = { hat: '모자', top: '상의', bottom: '하의', shoes: '신발', default: '상품' };
+const VISION_TYPE_SCORE = { clean: 0, scene: 1, multi: 2, model: 3 }; // 작을수록 우선
+
+async function classifyImagesWithVision(imageUrls, slot) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey || imageUrls.length === 0) return null;
+
+  const slotKo = SLOT_LABEL_KO[slot] || '상품';
+  const content = [
+    {
+      type: 'text',
+      text: `다음 ${imageUrls.length}장의 ${slotKo} 상품 사진을 각각 분류하라. 카테고리:
+- "clean": 흰색·단색 배경에 상품 하나만 단독으로 있는 누끼 컷 (사람·여러 상품 없음)
+- "model": 사람이 입거나 들고 있는 모델 컷
+- "multi": 여러 상품이 한 사진에 모인 카탈로그·세트 컷
+- "scene": 야외·실내 배경에 자연스럽게 놓인 컷
+
+JSON으로만 답하라. 마크다운·설명 금지.
+{"results":[{"idx":0,"type":"clean"},{"idx":1,"type":"model"}]}`,
+    },
+    ...imageUrls.map((url) => ({ type: 'image_url', image_url: { url } })),
+  ];
+
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'llama-3.2-11b-vision-preview',
+        messages: [{ role: 'user', content }],
+        max_tokens: 400,
+        temperature: 0.1,
+        response_format: { type: 'json_object' },
+      }),
+    });
+
+    if (!response.ok) return null;
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content || '';
+    const parsed = JSON.parse(text);
+    return parsed.results || null;
+  } catch {
+    return null; // Vision 실패는 silent — 텍스트 휴리스틱이 폴백
+  }
+}
+
+async function rankByVisionClassification(items, slot) {
+  if (!Array.isArray(items) || items.length <= 1) return items;
+  const head = items.slice(0, 5);
+  const urls = head.map((it) => it.image_url).filter((u) => u && /^https?:\/\//.test(u));
+  if (urls.length === 0) return items;
+
+  const verdict = await classifyImagesWithVision(urls, slot);
+  if (!verdict || verdict.length === 0) return items;
+
+  const verdictMap = {};
+  verdict.forEach((v) => {
+    if (typeof v.idx === 'number') verdictMap[v.idx] = v.type;
+  });
+
+  const scored = head.map((item, i) => {
+    const type = verdictMap[i] || 'unknown';
+    return { ...item, _vision_score: VISION_TYPE_SCORE[type] ?? 99 };
+  });
+  scored.sort((a, b) => a._vision_score - b._vision_score);
+  const cleanedHead = scored.map(({ _vision_score, ...rest }) => rest);
+  return [...cleanedHead, ...items.slice(5)];
 }
 
 async function callNaverApi(query, display, sort) {
