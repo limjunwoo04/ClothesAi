@@ -360,11 +360,30 @@ async function searchNaver(query, display, sort, slot = 'default', gender = null
     return (a.price_num || 0) - (b.price_num || 0);
   });
 
-  // 이미지 URL 없는 항목은 화면에서 깨지므로 통째 제거 (안전장치: 모두 빠지면 원본 그대로)
+  // 이미지 URL 없는 항목은 화면에서 깨지므로 통째 제거
   const withImage = final.filter((item) => item.image_url && /^https?:\/\//.test(item.image_url));
-  const ready = withImage.length > 0 ? withImage : final;
+  // 신뢰 가능한 셀렉트샵 CDN 이미지만 통과 (만료·404 가능성 ↓)
+  const trustedImage = withImage.filter((item) => item._is_clean_cdn || isTrustedFallbackImage(item.image_url));
+  const ready = trustedImage.length >= 2 ? trustedImage : (withImage.length > 0 ? withImage : final);
 
   return ready.map(({ _link_type, _mall_tier, _has_model_keyword, _has_multi_keyword, _is_clean_cdn, _matches_slot, _violates_gender, ...rest }) => rest);
+}
+
+// 폴백 신뢰 도메인 — 셀렉트샵 외에도 안정적으로 image 호스팅하는 CDN
+function isTrustedFallbackImage(url) {
+  if (!url) return false;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return [
+      'shopping-phinf.pstatic.net',
+      'pstatic.net',
+      'akamaized.net',
+      'cloudfront.net',
+      'naver.net',
+    ].some((d) => host.includes(d));
+  } catch {
+    return false;
+  }
 }
 
 function cleanProductUrl(url) {
