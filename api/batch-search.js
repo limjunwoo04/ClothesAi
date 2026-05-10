@@ -126,28 +126,28 @@ export default async function handler(req, res) {
 const SLOT_LABEL_KO = { hat: '모자', top: '상의', bottom: '하의', shoes: '신발', default: '상품' };
 const VISION_TYPE_SCORE = { clean: 0, scene: 1, multi: 2, model: 3 }; // 작을수록 우선
 
-async function classifyImagesWithVision(imageUrls, slot) {
+async function classifySingleImageWithVision(imageUrl, slot) {
   const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey || imageUrls.length === 0) return null;
+  if (!apiKey || !imageUrl) return null;
 
   const slotKo = SLOT_LABEL_KO[slot] || '상품';
   const content = [
     {
       type: 'text',
-      text: `다음 ${imageUrls.length}장의 ${slotKo} 상품 사진을 매우 엄격하게 분류하라. 의심되면 multi 또는 model.
+      text: `이 ${slotKo} 상품 사진을 매우 엄격하게 분류하라. 의심되면 multi 또는 model.
 
-분류 기준 — 사진에 보이는 상품 수를 우선 판단:
-- "clean": **단 하나의 상품만** 흰색·단색 배경에 단독으로 있는 사진. 사람 없음.
-- "multi": **2개 이상의 상품**이 한 사진에 (같은 상품의 다른 컬러·각도 라인업도 multi, 컬러 차트, 정렬·격자·콜라주 모두 포함).
+기준:
+- "clean": 단 하나의 상품만 흰색·단색 배경에 단독으로 있는 사진. 사람 없음.
+- "multi": 2개 이상의 상품이 한 사진에 (같은 상품의 다른 컬러·각도 라인업도 multi).
 - "model": 사람의 일부(얼굴·팔·다리·몸·손·발)가 보이는 사진.
 - "scene": 야외·실내 환경에 자연스럽게 놓인 단일 상품.
 
-핵심 규칙: 사진 안에 **상품 모양이 2개 이상 있으면 무조건 multi**. 같은 신발이 컬러만 다르게 6켤레 있어도 multi.
+핵심: 상품 모양이 2개 이상 보이면 무조건 multi.
 
-JSON으로만 답하라. 마크다운·설명 금지.
-{"results":[{"idx":0,"type":"clean"},{"idx":1,"type":"multi"}]}`,
+JSON으로만 답하라.
+{"type":"clean"}`,
     },
-    ...imageUrls.map((url) => ({ type: 'image_url', image_url: { url } })),
+    { type: 'image_url', image_url: { url: imageUrl } },
   ];
 
   try {
@@ -160,38 +160,49 @@ JSON으로만 답하라. 마크다운·설명 금지.
       body: JSON.stringify({
         model: 'llama-3.2-11b-vision-preview',
         messages: [{ role: 'user', content }],
-        max_tokens: 400,
+        max_tokens: 50,
         temperature: 0.1,
         response_format: { type: 'json_object' },
       }),
     });
 
-    if (!response.ok) return null;
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[Vision] HTTP ${response.status}:`, errText.slice(0, 200));
+      return null;
+    }
     const data = await response.json();
     const text = data.choices?.[0]?.message?.content || '';
     const parsed = JSON.parse(text);
-    return parsed.results || null;
-  } catch {
-    return null; // Vision 실패는 silent — 텍스트 휴리스틱이 폴백
+    return parsed.type || null;
+  } catch (e) {
+    console.error('[Vision] Exception:', e.message);
+    return null;
   }
 }
 
 async function rankByVisionClassification(items, slot) {
   if (!Array.isArray(items) || items.length <= 1) return items;
   const head = items.slice(0, 5);
-  const urls = head.map((it) => it.image_url).filter((u) => u && /^https?:\/\//.test(u));
-  if (urls.length === 0) return items;
 
-  const verdict = await classifyImagesWithVision(urls, slot);
-  if (!verdict || verdict.length === 0) return items;
+  // 이미지 1장씩 병렬 호출 (Groq Vision multi-image 미지원 회피)
+  const types = await Promise.all(
+    head.map((it) =>
+      it.image_url && /^https?:\/\//.test(it.image_url)
+        ? classifySingleImageWithVision(it.image_url, slot)
+        : Promise.resolve(null)
+    )
+  );
 
-  const verdictMap = {};
-  verdict.forEach((v) => {
-    if (typeof v.idx === 'number') verdictMap[v.idx] = v.type;
-  });
+  // 모든 호출이 실패하면 원본 그대로 (텍스트 휴리스틱 정렬 유지)
+  const validVerdicts = types.filter((t) => t !== null);
+  if (validVerdicts.length === 0) {
+    console.warn(`[Vision] all calls failed for slot ${slot} — falling back to text heuristics`);
+    return items;
+  }
 
   const scored = head.map((item, i) => {
-    const type = verdictMap[i] || 'unknown';
+    const type = types[i] || 'unknown';
     return { ...item, _vision_score: VISION_TYPE_SCORE[type] ?? 99, _vision_type: type };
   });
   scored.sort((a, b) => a._vision_score - b._vision_score);
