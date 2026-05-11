@@ -158,7 +158,7 @@ JSON으로만 답하라.
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'llama-3.2-11b-vision-preview',
+        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
         messages: [{ role: 'user', content }],
         max_tokens: 50,
         temperature: 0.1,
