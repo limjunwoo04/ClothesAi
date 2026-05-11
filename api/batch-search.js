@@ -108,10 +108,8 @@ export default async function handler(req, res) {
         const slotType = (q.slot || '').split('-').pop() || 'default';
         const items = await searchNaver(q.keyword, 20, q.sort || 'sim', slotType, gender);
         const ranked = await rankByVisionClassification(items, slotType);
-        // 상위 후보 image URL 사전 검증 — 죽은 URL을 frontend에 보내지 않음
-        const verified = await verifyTopImages(ranked, q.display || 5);
-        const pool = verified.length > 0 ? verified : ranked;
-        return { slot: q.slot, keyword: q.keyword, items: pool.slice(0, q.display || 5) };
+        // HEAD 검증은 제거 — frontend의 5단 cascade fallback이 죽은 URL 처리
+        return { slot: q.slot, keyword: q.keyword, items: ranked.slice(0, q.display || 5) };
       } catch (e) {
         return { slot: q.slot, keyword: q.keyword, items: [], error: e.message };
       }
@@ -185,9 +183,9 @@ JSON으로만 답하라.
 
 async function rankByVisionClassification(items, slot) {
   if (!Array.isArray(items) || items.length <= 1) return items;
-  const head = items.slice(0, 5);
+  // 슬롯당 상위 2장만 분류 (분당 한도 안전: 12 슬롯 × 2 = 24회 < 30회)
+  const head = items.slice(0, 2);
 
-  // 이미지 1장씩 병렬 호출 (Groq Vision multi-image 미지원 회피)
   const types = await Promise.all(
     head.map((it) =>
       it.image_url && /^https?:\/\//.test(it.image_url)
@@ -211,9 +209,9 @@ async function rankByVisionClassification(items, slot) {
 
   // 누끼 우선 통과 — clean/scene만 살리고 model/multi는 컷 (안전장치: 통과 결과 부족하면 정렬만)
   const cleanOrScene = scored.filter((item) => item._vision_type === 'clean' || item._vision_type === 'scene');
-  const survivors = cleanOrScene.length >= 2 ? cleanOrScene : scored;
+  const survivors = cleanOrScene.length >= 1 ? cleanOrScene : scored;
   const cleanedHead = survivors.map(({ _vision_score, _vision_type, ...rest }) => rest);
-  return [...cleanedHead, ...items.slice(5)];
+  return [...cleanedHead, ...items.slice(2)];
 }
 
 async function callNaverApi(query, display, sort) {
