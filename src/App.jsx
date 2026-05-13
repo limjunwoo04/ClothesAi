@@ -581,7 +581,6 @@ function ChatView({ profile, onBack }) {
             return (
               <div key={i} className="fade-in" style={{ padding: '4px 0' }}>
                 <LookbookGallery outfits={msg.content.outfits} />
-                <StyleGuide guide={msg.content.style_guide} />
               </div>
             );
           }
