@@ -466,8 +466,15 @@ function ProfileForm({ profile, setProfile, onNext, onBack }) {
 const INITIAL_PROFILE = { gender: '', age: '', height: '', bodyType: '', budget: '', dislikes: '' };
 const INITIAL_MESSAGES = [
   { role: 'ai', type: 'text', content: '안녕하세요, 클로예요.\n친구처럼 코디 같이 골라드릴게요.' },
-  { role: 'ai', type: 'text', content: '먼저 성별이 어떻게 돼요?' },
+  { role: 'ai', type: 'text', content: '먼저 성별이 어떻게 되세요?' },
   { role: 'ai', type: 'quickReplies', content: ['남성', '여성'] },
+];
+
+const LOADING_PHASES = [
+  '스타일 표현 분석 중',
+  '톤과 색감 잡는 중',
+  '실제 상품 찾는 중',
+  '룩북 엮는 중',
 ];
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -478,7 +485,16 @@ function ChatView() {
   const [stage, setStage] = useState(0); // 0:성별 1:나이 2:키 3:체형 4:예산 5:스타일 (이후 자유 대화)
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingPhase, setLoadingPhase] = useState(0);
   const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (!loading) { setLoadingPhase(0); return; }
+    const t = setInterval(() => {
+      setLoadingPhase((p) => Math.min(p + 1, LOADING_PHASES.length - 1));
+    }, 1800);
+    return () => clearInterval(t);
+  }, [loading]);
 
   useEffect(() => {
     if (!scrollRef.current) return;
@@ -535,7 +551,7 @@ function ChatView() {
       setProfile(next);
       setStage(1);
       await delay(400);
-      appendAi({ type: 'text', content: `${userText}분이군요. 나이가 어떻게 되세요? (숫자만)` });
+      appendAi({ type: 'text', content: `${userText}분이군요. 나이가 어떻게 되세요?` });
       return;
     }
     if (stage === 1) {
@@ -549,7 +565,7 @@ function ChatView() {
       setProfile(next);
       setStage(2);
       await delay(400);
-      appendAi({ type: 'text', content: `${age}살이시군요. 키는 어떻게 되세요? (cm)` });
+      appendAi({ type: 'text', content: `${age}살이시군요. 키는 어떻게 되세요?` });
       return;
     }
     if (stage === 2) {
@@ -563,7 +579,7 @@ function ChatView() {
       setProfile(next);
       setStage(3);
       await delay(400);
-      appendAi({ type: 'text', content: '체형은 어떻게 표현해볼까요?\n자유롭게 적어주세요 (예: 마른편, 어깨가 넓음, 살짝 통통)' });
+      appendAi({ type: 'text', content: '체형은 어떻게 표현해볼까요?\n자유롭게 적어주세요 (예: 마른편, 어깨가 넓음, 뱃살 살짝 있음, 하체비만 등)' });
       return;
     }
     if (stage === 3) {
@@ -576,7 +592,7 @@ function ChatView() {
       setProfile(next);
       setStage(4);
       await delay(400);
-      appendAi({ type: 'text', content: '예산은 만원 단위로 어느 정도?' });
+      appendAi({ type: 'text', content: '예산은 어느 정도로 보세요?' });
       return;
     }
     if (stage === 4) {
@@ -706,7 +722,7 @@ function ChatView() {
                 <span className="dot-typing" style={{ animationDelay: '0.15s' }}></span>
                 <span className="dot-typing" style={{ animationDelay: '0.3s' }}></span>
               </div>
-              <span className="font-body text-xs" style={{ color: 'var(--muted)' }}>Clo가 입력 중</span>
+              <span className="font-body text-xs" style={{ color: 'var(--muted)' }}>{LOADING_PHASES[loadingPhase]}</span>
             </div>
           </div>
         )}
