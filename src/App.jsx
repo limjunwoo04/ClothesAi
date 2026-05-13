@@ -463,79 +463,176 @@ function ProfileForm({ profile, setProfile, onNext, onBack }) {
   );
 }
 
-function ChatView({ profile, onBack }) {
-  const [messages, setMessages] = useState([
-    { role: 'ai', type: 'text', content: '안녕하세요, 클로예요.\n오늘 어떤 분위기로 가고 싶으세요?' },
-    { role: 'ai', type: 'quickReplies', content: SAMPLE_PROMPTS },
-  ]);
+const INITIAL_PROFILE = { gender: '', age: '', height: '', bodyType: '', budget: '', dislikes: '' };
+const INITIAL_MESSAGES = [
+  { role: 'ai', type: 'text', content: '안녕하세요, 클로예요.\n친구처럼 코디 같이 골라드릴게요.' },
+  { role: 'ai', type: 'text', content: '먼저 성별이 어떻게 돼요?' },
+  { role: 'ai', type: 'quickReplies', content: ['남성', '여성'] },
+];
+
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function ChatView() {
+  const [messages, setMessages] = useState(INITIAL_MESSAGES);
+  const [profile, setProfile] = useState(INITIAL_PROFILE);
+  const [stage, setStage] = useState(0); // 0:성별 1:나이 2:키 3:체형 4:예산 5:스타일 (이후 자유 대화)
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef(null);
-  const turnIndexRef = useRef(0);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, loading]);
 
-  const send = async (text) => {
-    const userText = (text || input).trim();
-    if (!userText || loading) return;
+  const appendAi = (...items) => setMessages((prev) => [...prev, ...items.map((it) => ({ role: 'ai', ...it }))]);
+  const appendUser = (text) => setMessages((prev) => [
+    ...prev.filter((m) => m.type !== 'quickReplies'),
+    { role: 'user', type: 'text', content: text },
+  ]);
 
-    setMessages((prev) => [
-      ...prev.filter((m) => m.type !== 'quickReplies'),
-      { role: 'user', type: 'text', content: userText },
-    ]);
-    setInput('');
+  const generateLookbook = async (text, nextProfile) => {
     setLoading(true);
-    turnIndexRef.current += 1;
-    const isFirst = turnIndexRef.current === 1;
-
     try {
-      const data = await callAI(profile, userText);
-      const intro = isFirst
-        ? `'${data.mood_label}' 무드로 골라봤어요. 마음에 드는 한 벌이 있길!`
-        : `이번엔 '${data.mood_label}'로 다시 그려봤어요.`;
-      setMessages((prev) => [
-        ...prev,
-        { role: 'ai', type: 'text', content: intro },
-        { role: 'ai', type: 'lookbook', content: data },
-        { role: 'ai', type: 'text', content: '상품 카드를 누르면 구매 페이지로 가요. 다른 무드나 변형도 자유롭게 말해주세요.' },
-      ]);
+      const data = await callAI(nextProfile, text);
+      await delay(300);
+      appendAi(
+        { type: 'text', content: `'${data.mood_label}' 무드로 골라봤어요. 마음에 드는 한 벌이 있길!` },
+        { type: 'lookbook', content: data },
+        { type: 'text', content: '상품 카드를 누르면 구매 페이지로 가요. 다른 무드나 변형도 자유롭게 말해주세요.' },
+      );
     } catch (e) {
       console.error(e);
-      setMessages((prev) => [
-        ...prev,
-        { role: 'ai', type: 'error', content: `이번엔 잘 안 됐어요. 잠시 후 다시 시도해 주세요. (${e.message})` },
-      ]);
+      appendAi({ type: 'error', content: `이번엔 잘 안 됐어요. 잠시 후 다시 시도해 주세요. (${e.message})` });
     } finally {
       setLoading(false);
     }
   };
 
+  const handleAnswer = async (text) => {
+    const userText = text.trim();
+    if (!userText || loading) return;
+
+    appendUser(userText);
+    setInput('');
+
+    // 단계별 정보 수집
+    if (stage === 0) {
+      if (!['남성', '여성'].includes(userText)) {
+        await delay(350);
+        appendAi({ type: 'text', content: '아래 버튼 중 하나로 선택해주세요.' }, { type: 'quickReplies', content: ['남성', '여성'] });
+        return;
+      }
+      const next = { ...profile, gender: userText };
+      setProfile(next);
+      setStage(1);
+      await delay(400);
+      appendAi({ type: 'text', content: `${userText}분이군요. 나이가 어떻게 되세요? (숫자만)` });
+      return;
+    }
+    if (stage === 1) {
+      const age = userText.replace(/[^0-9]/g, '').slice(0, 2);
+      if (!age) {
+        await delay(350);
+        appendAi({ type: 'text', content: '숫자만 적어주세요. 예: 22' });
+        return;
+      }
+      const next = { ...profile, age };
+      setProfile(next);
+      setStage(2);
+      await delay(400);
+      appendAi({ type: 'text', content: `${age}살이시군요. 키는 어떻게 되세요? (cm)` });
+      return;
+    }
+    if (stage === 2) {
+      const height = userText.replace(/[^0-9]/g, '').slice(0, 3);
+      if (!height) {
+        await delay(350);
+        appendAi({ type: 'text', content: '숫자로 적어주세요. 예: 175' });
+        return;
+      }
+      const next = { ...profile, height };
+      setProfile(next);
+      setStage(3);
+      await delay(400);
+      appendAi(
+        { type: 'text', content: '체형은 어느 쪽에 가까워요?' },
+        { type: 'quickReplies', content: ['마른편', '보통', '근육질', '통통'] },
+      );
+      return;
+    }
+    if (stage === 3) {
+      if (!['마른편', '보통', '근육질', '통통'].includes(userText)) {
+        await delay(350);
+        appendAi({ type: 'text', content: '버튼 중에서 골라주세요.' }, { type: 'quickReplies', content: ['마른편', '보통', '근육질', '통통'] });
+        return;
+      }
+      const next = { ...profile, bodyType: userText };
+      setProfile(next);
+      setStage(4);
+      await delay(400);
+      appendAi({ type: 'text', content: '예산은 만원 단위로 어느 정도?' });
+      return;
+    }
+    if (stage === 4) {
+      const budget = userText.replace(/[^0-9]/g, '').slice(0, 4);
+      if (!budget) {
+        await delay(350);
+        appendAi({ type: 'text', content: '숫자만 적어주세요. 예: 20' });
+        return;
+      }
+      const next = { ...profile, budget };
+      setProfile(next);
+      setStage(5);
+      await delay(400);
+      appendAi(
+        { type: 'text', content: '좋아요, 다 받았어요!\n이제 어떤 스타일·분위기로 가고 싶어요?' },
+        { type: 'quickReplies', content: SAMPLE_PROMPTS },
+      );
+      return;
+    }
+
+    // stage 5+: 스타일 입력 → 룩북 생성, 이후 자유 대화
+    await generateLookbook(userText, profile);
+  };
+
   const handleKey = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      send();
+      handleAnswer(input);
     }
   };
+
+  const restart = () => {
+    setMessages(INITIAL_MESSAGES);
+    setProfile(INITIAL_PROFILE);
+    setStage(0);
+    setInput('');
+    setLoading(false);
+  };
+
+  const placeholder = (() => {
+    if (loading) return 'Clo가 답하는 중…';
+    if (stage === 0) return '성별을 선택해주세요';
+    if (stage === 1) return '나이를 적어주세요 (예: 22)';
+    if (stage === 2) return '키를 적어주세요 (cm)';
+    if (stage === 3) return '체형을 선택해주세요';
+    if (stage === 4) return '예산을 적어주세요 (만원)';
+    return '원하는 스타일이나 변경 요청을 적어주세요';
+  })();
 
   return (
     <section className="max-w-2xl mx-auto fade-in flex flex-col" style={{ minHeight: '100vh' }}>
       <header className="sticky top-0 z-20 flex items-center gap-3 px-4 py-3" style={{ background: '#FFFFFF', borderBottom: '1px solid var(--line)' }}>
-        <button onClick={onBack} disabled={loading} className="btn-press p-1.5" style={{ color: 'var(--muted)' }} aria-label="뒤로">
-          <ArrowLeft size={18} />
-        </button>
-        <div className="flex items-center gap-2.5 flex-1">
-          <div className="flex items-center justify-center" style={{ width: 36, height: 36, borderRadius: 18, background: 'var(--ink)' }}>
-            <Sparkles size={15} style={{ color: '#FFFFFF' }} />
-          </div>
-          <div className="leading-tight">
-            <div className="font-display italic text-base" style={{ color: 'var(--ink)', fontWeight: 500 }}>Clo</div>
-            <div className="font-body text-[10px] tracking-[0.15em] uppercase" style={{ color: 'var(--muted)' }}>ClothesAi · Assistant</div>
-          </div>
+        <div className="flex items-center justify-center" style={{ width: 36, height: 36, borderRadius: 18, background: 'var(--ink)' }}>
+          <Sparkles size={15} style={{ color: '#FFFFFF' }} />
         </div>
+        <div className="leading-tight flex-1">
+          <div className="font-display italic text-base" style={{ color: 'var(--ink)', fontWeight: 500 }}>Clo</div>
+          <div className="font-body text-[10px] tracking-[0.15em] uppercase" style={{ color: 'var(--muted)' }}>ClothesAi · Assistant</div>
+        </div>
+        <button onClick={restart} disabled={loading} className="btn-press font-body text-[10px] tracking-[0.15em] uppercase px-3 py-1.5" style={{ color: 'var(--muted)', border: '1px solid var(--line)', borderRadius: 999 }}>
+          <RefreshCw size={11} className="inline mr-1" /> 처음으로
+        </button>
       </header>
 
       <div ref={scrollRef} className="flex-1 px-4 py-6 space-y-4 overflow-y-auto" style={{ paddingBottom: 110 }}>
@@ -564,10 +661,9 @@ function ChatView({ profile, onBack }) {
           if (msg.type === 'quickReplies') {
             return (
               <div key={i} className="pt-1 space-y-2 fade-in">
-                <div className="font-body text-[10px] tracking-[0.2em] uppercase pl-1" style={{ color: 'var(--muted)' }}>이렇게 표현해 보세요</div>
                 <div className="flex flex-wrap gap-2">
                   {msg.content.map((p, idx) => (
-                    <button key={idx} type="button" onClick={() => send(p)}
+                    <button key={idx} type="button" onClick={() => handleAnswer(p)}
                       className="btn-press font-body text-xs"
                       style={{ padding: '8px 14px', borderRadius: 999, border: '1px solid var(--line)', background: '#FFFFFF', color: 'var(--ink)' }}>
                       {p}
@@ -616,7 +712,7 @@ function ChatView({ profile, onBack }) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKey}
-            placeholder={loading ? 'Clo가 답하는 중…' : '원하는 스타일이나 변경 요청을 적어주세요'}
+            placeholder={placeholder}
             rows={1}
             disabled={loading}
             className="flex-1 font-body text-sm"
@@ -633,7 +729,7 @@ function ChatView({ profile, onBack }) {
             }}
           />
           <button
-            onClick={() => send()}
+            onClick={() => handleAnswer(input)}
             disabled={!input.trim() || loading}
             className="btn-press flex items-center justify-center"
             style={{
@@ -1213,9 +1309,6 @@ function Result({ result, query, onRestart }) {
 }
 
 export default function App() {
-  const [step, setStep] = useState('intro');
-  const [profile, setProfile] = useState({ gender: '', age: '', height: '', bodyType: '', budget: '', dislikes: '' });
-
   useEffect(() => {
     const styleEl = document.createElement('style');
     styleEl.innerHTML = FONT_LINK;
@@ -1223,28 +1316,9 @@ export default function App() {
     return () => { document.head.removeChild(styleEl); };
   }, []);
 
-  useEffect(() => {
-    if (step !== 'chat') window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [step]);
-
   return (
     <div className="font-body min-h-screen" style={{ background: 'var(--cream)', color: 'var(--ink)' }}>
-      {step !== 'chat' && <Header step={step} />}
-      {step === 'intro' && <Intro onStart={() => setStep('profile')} />}
-      {step === 'profile' && <ProfileForm profile={profile} setProfile={setProfile} onNext={() => setStep('chat')} onBack={() => setStep('intro')} />}
-      {step === 'chat' && <ChatView profile={profile} onBack={() => setStep('profile')} />}
-      {step !== 'chat' && (
-        <footer className="border-t py-6 mt-12" style={{ borderColor: 'var(--line)' }}>
-          <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
-            <div className="font-display text-sm" style={{ color: 'var(--muted)' }}>
-              <span style={{ fontStyle: 'italic' }}>Clothes</span>Ai · MVP Demo v7
-            </div>
-            <div className="font-body text-[10px] tracking-[0.25em] uppercase" style={{ color: 'var(--muted)' }}>
-              Chat Mode · 2026
-            </div>
-          </div>
-        </footer>
-      )}
+      <ChatView />
     </div>
   );
 }
