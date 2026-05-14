@@ -639,10 +639,10 @@ function ChatView() {
   };
 
   const handleKey = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleAnswer(input);
-    }
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return; // 한글 IME 조합 중 Enter 무시
+    e.preventDefault();
+    handleAnswer(input);
   };
 
   const restart = () => {
