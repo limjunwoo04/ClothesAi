@@ -149,7 +149,9 @@ const buildTrendBlock = (trends) => {
 };
 
 const callAI = async (profile, styleQuery, trends) => {
-  const trendBlock = buildTrendBlock(trends);
+  // 트렌드 블록은 일시 비활성. Llama 3.1 8B + JSON mode 조합에서 컨텍스트 늘리면
+  // outfits 1개·슬롯 누락 패턴이 잦아 비활성. 더 큰 모델로 올린 뒤 재활성.
+  // const trendBlock = buildTrendBlock(trends);
 
   const prompt = `너는 한국 20대 패션 큐레이터다. 사용자의 추상적 스타일 표현을 해석해, 네이버 쇼핑에서 실제 검색 가능한 한국어 키워드로 변환한다.
 
@@ -160,7 +162,7 @@ const callAI = async (profile, styleQuery, trends) => {
 - 체형: ${profile.bodyType}
 - 예산: ${profile.budget}만원
 - 싫어하는 스타일: ${profile.dislikes || '없음'}
-${trendBlock}
+
 ## 사용자 입력
 "${styleQuery}"
 
@@ -242,7 +244,7 @@ ${trendBlock}
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 2500,
+      max_tokens: 3500,
       messages: [{ role: 'user', content: prompt }],
     }),
   });
