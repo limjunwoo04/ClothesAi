@@ -73,4 +73,4 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **Stack**: Vite + React + Tailwind / Vercel API Routes / Groq Llama 3.1 8B + 3.2 Vision / 네이버 쇼핑 OpenAPI
 - **Env vars** (Vercel only, never log): `GROQ_API_KEY`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`
 - **Design no-gos**: purple gradients, excessive rounded corners, emojis, "AI-generated look". Aim for editorial magazine tone.
-- **Workflow**: code edit → `git add` → commit → `git push` (Vercel auto-deploys in 1–2 min). Always push after every change.
+- **Workflow**: code edit → **`npm run build` 통과 확인 (필수)** → `git add` → commit → `git push` (Vercel auto-deploys in 1–2 min). 빌드 실패 push는 라이브를 옛 코드에 멈춰두므로 절대 X.
