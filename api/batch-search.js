@@ -400,7 +400,6 @@ async function searchNaver(query, display, sort, slot = 'default', gender = null
   const trustedImage = withImage.filter((item) => item._is_clean_cdn || isTrustedFallbackImage(item.image_url));
   const ready = trustedImage.length >= 2 ? trustedImage : (withImage.length > 0 ? withImage : final);
 
-<<<<<<< HEAD
   // 디버그 로그 — 슬롯별 검색어 + 단계별 통과 개수
   console.log(
     `[search] slot=${slot} q="${usedQuery}" naver=${rawCount} price=${priceCount} ` +
@@ -408,10 +407,7 @@ async function searchNaver(query, display, sort, slot = 'default', gender = null
     `gen=${genderFiltered.length} img=${withImage.length} trust=${trustedImage.length} → final=${ready.length}`
   );
 
-  return ready.map(({ _link_type, _mall_tier, _has_model_keyword, _has_multi_keyword, _is_clean_cdn, _matches_slot, _violates_gender, ...rest }) => rest);
-=======
   return ready.map(({ _link_type, _mall_tier, _has_model_keyword, _has_multi_keyword, _is_clean_cdn, _matches_slot, _looks_other_slot, _violates_gender, ...rest }) => rest);
->>>>>>> 810c236 (fix(slots): enforce strict slot integrity + drop Naver-search fallback URL)
 }
 
 // 폴백 신뢰 도메인 — 셀렉트샵 외에도 안정적으로 image 호스팅하는 CDN
