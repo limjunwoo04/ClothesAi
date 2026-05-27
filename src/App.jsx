@@ -340,7 +340,9 @@ mood_label과 검색어는 **이 토큰들에서 직접 파생**되어야 한다
   });
 
   if (!searchResponse.ok) {
-    throw new Error(`상품 검색 서버 오류 (${searchResponse.status})`);
+    const errBody = await searchResponse.json().catch(() => ({}));
+    const detail = errBody.message || errBody.error || JSON.stringify(errBody).slice(0, 200);
+    throw new Error(`상품 검색 ${searchResponse.status}: ${detail}`);
   }
 
   const searchData = await searchResponse.json();
