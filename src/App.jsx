@@ -345,9 +345,61 @@ mood_label과 검색어는 **이 토큰들에서 직접 파생**되어야 한다
     slotMap[r.slot] = r.items || [];
   });
 
-  // ─── 3단계 — 검색 결과 1순위로 슬롯 합성 ───
-  // 정책: 본인 outfit 검색 결과 우선(색·키워드 정확). 0건일 때만 다른 outfit 풀에서
-  // AI 의도 색에 가까운 순으로 폴백. modulo 인덱스 순환은 색 깨짐 원인이라 제거.
+  // ─── 2.5단계 — LLM 큐레이션: 후보 데이터 보고 outfit별 픽 ───
+  // LLM이 실제 상품 이름·몰을 보고 mood/색 매칭 가장 좋은 인덱스 선택.
+  // 실패 시 그냥 pool[0] 폴백.
+  let llmPicks = null;
+  try {
+    const curationOutfits = result.outfits.map((o, oi) => ({
+      i: oi,
+      title: o.title || '',
+      items: ['hat', 'top', 'bottom', 'shoes'].map((slot) => {
+        const cand = (slotMap[`${oi}-${slot}`] || [])
+          .filter((c) => c.image_url && /^https?:\/\//.test(c.image_url))
+          .slice(0, 6);
+        return {
+          slot,
+          color: o.items?.[slot]?.color || '',
+          candidates: cand.map((c, ci) => ({ idx: ci, name: (c.name || '').slice(0, 60), mall: c.mall || '' })),
+        };
+      }),
+    }));
+
+    const curatePrompt = `다음은 룩북 후보 데이터다. 사용자 mood와 의도 색에 가장 잘 맞는 후보를 outfit별로 픽하라.
+
+mood: ${result.mood_label || ''}
+
+${curationOutfits.map((o) => `[outfit ${o.i}] ${o.title}
+${o.items.map((it) => `  ${it.slot} (의도색: ${it.color || '자유'}):
+${it.candidates.map((c) => `    [${c.idx}] ${c.name} (${c.mall})`).join('\n') || '    (후보 없음)'}`).join('\n')}`).join('\n\n')}
+
+각 outfit·슬롯에 가장 mood/색 매칭 좋은 candidate idx를 픽. 후보 없으면 0.
+JSON만:
+{"picks":[{"hat":N,"top":N,"bottom":N,"shoes":N},{"hat":N,"top":N,"bottom":N,"shoes":N},{"hat":N,"top":N,"bottom":N,"shoes":N}]}`;
+
+    const curateResp = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        max_tokens: 600,
+        messages: [{ role: 'user', content: curatePrompt }],
+      }),
+    });
+    if (curateResp.ok) {
+      const curateData = await curateResp.json();
+      const text = (curateData.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n');
+      const cleaned = text.replace(/```json|```/g, '').trim();
+      const s = cleaned.indexOf('{'); const e = cleaned.lastIndexOf('}');
+      if (s !== -1 && e !== -1) {
+        const parsed = JSON.parse(cleaned.slice(s, e + 1));
+        if (Array.isArray(parsed.picks)) llmPicks = parsed.picks;
+      }
+    }
+  } catch (e) {
+    console.warn('[curation] LLM 픽 실패, pool[0] 폴백:', e.message);
+  }
+
+  // ─── 3단계 — 검색 결과 합성 (LLM 픽 우선, 폴백은 pool[0]) ───
   result.outfits.forEach((outfit, oi) => {
     let totalPrice = 0;
     ['hat', 'top', 'bottom', 'shoes'].forEach((slot) => {
@@ -373,9 +425,10 @@ mood_label과 검색어는 **이 토큰들에서 직접 파생**되어야 한다
         candidates = uniqueMerged;
       }
       // 이미지 있는 후보만 사용. 빈 이미지 폴백 금지 — 회색 박스 렌더 차단.
-      // pool이 비면 picked = undefined → 아래 else에서 슬롯 자체 삭제됨.
       const pool = candidates.filter((c) => c.image_url && /^https?:\/\//.test(c.image_url));
-      const picked = pool[0];
+      // LLM 큐레이션 픽이 있고 인덱스가 유효하면 그것 사용, 아니면 pool[0]
+      const pickIdx = llmPicks?.[oi]?.[slot];
+      const picked = (typeof pickIdx === 'number' && pool[pickIdx]) ? pool[pickIdx] : pool[0];
       // 이미지 로드 실패 시 cascade할 backup URLs (다음 후보 4개까지)
       const altImages = pool
         .slice(1, 5)
