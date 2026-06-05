@@ -263,9 +263,13 @@ async function callNaverApi(query, display, sort) {
 }
 
 async function searchNaver(query, display, sort, slot = 'default', gender = null) {
-  // 단계별 검색 폴백 — 0건이면 검색어 단순화해서 재시도
-  let data = await callNaverApi(query, display, sort);
-  let usedQuery = query;
+  // 8B LLM이 프롬프트 "2단어 규칙"을 가끔 무시하고 좁은 검색어 만듦 → 자동 단순화
+  // 첫 2 토큰만 사용 ([성별]+[카테고리]). 셀렉트샵엔 색상별 SKU가 빈약해 0건 위험.
+  const tokens = (query || '').split(/\s+/).filter(Boolean);
+  const baseQuery = tokens.length > 2 ? tokens.slice(0, 2).join(' ') : query;
+
+  let data = await callNaverApi(baseQuery, display, sort);
+  let usedQuery = baseQuery;
 
   if (!data.items || data.items.length === 0) {
     const tokens = query.split(/\s+/).filter(Boolean);
