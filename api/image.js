@@ -15,7 +15,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { prompt, size = '1024x1024', quality = 'medium' } = req.body || {};
+    const { prompt, size = '1024x1024', quality = 'medium', background = 'auto' } = req.body || {};
     if (!prompt) return res.status(400).json({ error: 'prompt 필수' });
 
     const response = await fetch('https://api.openai.com/v1/images/generations', {
@@ -30,6 +30,7 @@ export default async function handler(req, res) {
         n: 1,
         size,
         quality,
+        background, // 'transparent' → 인물만 단독, 배경 투명 PNG
       }),
     });
 

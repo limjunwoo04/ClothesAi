@@ -374,7 +374,17 @@ async function searchNaver(query, display, sort, slot = 'default', gender = null
   let genderFiltered = categoryFiltered.filter((item) => !item._violates_gender);
   if (genderFiltered.length < 2) genderFiltered = categoryFiltered; // 안전장치
 
-  const final = genderFiltered;
+  // 최종 안전장치 — 필터가 슬롯을 통째로 비우면 단계적으로 풀어 "이미지 있는 후보"를 반드시 확보.
+  // 사용자 1순위: 상품/이미지는 무조건 떠야 한다(빈 슬롯=삭제 방지). 정렬이 무신사·클린CDN을
+  // 위로 올리므로, 하위 티어가 폴백에 섞여도 화면엔 베스트가 먼저 노출됨.
+  const withImg = (arr) => arr.filter((it) => it.image_url && /^https?:\/\//.test(it.image_url));
+  let final = withImg(genderFiltered);
+  if (final.length === 0) {
+    for (const tier of [categoryFiltered, mallFiltered, externalOnly, pool, items]) {
+      const c = withImg(tier);
+      if (c.length > 0) { final = c; break; }
+    }
+  }
   const linkPriority = { smartstore: 1, external: 2, brand: 3, shopping: 4, unknown: 5 };
 
   const isMusinsa = (m) => {

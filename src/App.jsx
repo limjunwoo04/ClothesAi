@@ -472,12 +472,13 @@ JSON만:
         .map((slot) => outfit.items?.[slot]?.name ? `${slot}: ${outfit.items[slot].name.slice(0, 50)}` : null)
         .filter(Boolean)
         .join(', ');
-      const prompt = `한국 20대 남성 패션 일러스트, 깔끔한 흰 배경, 단정한 만화풍 스타일, 정면 풀샷, 모델이 다음 아이템을 자연스럽게 코디한 모습: ${itemsDesc}. 컨셉: ${outfit.title || ''} · ${outfit.concept || ''}. ${profile.gender === '여성' ? '여성' : '남성'} 모델, 키 ${profile.height || 175}cm 체형 ${profile.bodyType || '보통'}.`;
+      const genderKo = profile.gender === '여성' ? '여성' : '남성';
+      const prompt = `한국 20대 ${genderKo} 패션 코디 일러스트, 인물 한 명. 머리 끝부터 신발 끝까지 전신이 프레임 안에 전부 보이게(머리와 발이 절대 잘리지 않게, 위아래 여백 충분히 확보). 배경 없이 인물만 단독으로(투명 배경). 깔끔한 플랫 일러스트 스타일, 정면 전신 풀샷, 자연스럽게 서 있는 포즈. 착용 아이템: ${itemsDesc}. 무드: ${outfit.title || ''} · ${outfit.concept || ''}. 키 ${profile.height || 175}cm, 체형 ${profile.bodyType || '보통'}. 얼굴은 단순하게 처리.`;
       try {
         const imgResp = await fetch('/api/image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt, size: '1024x1024', quality: 'medium' }),
+          body: JSON.stringify({ prompt, size: '1024x1536', quality: 'medium', background: 'transparent' }),
         });
         if (imgResp.ok) {
           const imgData = await imgResp.json();
@@ -1417,11 +1418,11 @@ function LookbookCard({ outfit, index, total, onRegenerate, regenerating }) {
         {outfit.model_image ? (
           /* 메인: AI 생성 모델 일러스트 (gpt-image-1) */
           <div className="flex justify-center">
-            <div className="product-shadow" style={{ maxWidth: 380, width: '100%' }}>
+            <div style={{ maxWidth: 340, width: '100%' }}>
               <img
                 src={outfit.model_image}
                 alt={outfit.title || ''}
-                style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 8 }}
+                style={{ width: '100%', height: 'auto', display: 'block' }}
                 loading="lazy"
               />
             </div>
